@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>一键通知</title>
+
+  <style>
+    body{
+      font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+      display:flex;
+      min-height:100vh;
+      align-items:center;
+      justify-content:center;
+      background:#f5f6f8;
+      margin:0;
+    }
+
+    .card{
+      width:min(620px, 92vw);
+      padding:26px;
+      border-radius:18px;
+      background:#fff;
+      box-shadow:0 12px 34px rgba(0,0,0,.10);
+    }
+
+    h2{
+      margin:0 0 10px;
+      font-size:22px;
+    }
+
+    .hint{
+      color:#666;
+      font-size:14px;
+      line-height:1.5;
+      margin-bottom:12px;
+    }
+
+    .toggle{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      margin:10px 0 14px;
+      color:#374151;
+      font-size:14px;
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:12px;
+    }
+
+    .btn{
+      font-size:18px;
+      padding:16px 14px;
+      border-radius:14px;
+      border:none;
+      cursor:pointer;
+      color:#fff;
+    }
+
+    .red{ background:#ef4444; }
+    .orange{ background:#f97316; }
+    .blue{ background:#3b82f6; }
+    .green{ background:#22c55e; }
+    .gray{ background:#6b7280; }
+
+    .msg{
+      margin-top:14px;
+      font-size:16px;
+      padding:10px 12px;
+      border-radius:12px;
+      background:#f3f4f6;
+      color:#111827;
+      min-height:22px;
+    }
+
+    .meta{
+      margin-top:10px;
+      font-size:12px;
+      color:#6b7280;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="card">
+    <h2>一键通知</h2>
+
+    <div class="hint">
+      点按钮即可发通知到你手机（Bark）。<br/>
+      勾选“附带定位”会请求手机定位权限。
+    </div>
+
+    <label class="toggle">
+      <input id="withLoc" type="checkbox" />
+      附带定位（需要授权）
+    </label>
+
+    <div class="grid" id="panel">
+      <button class="btn red"    data-type="EMERGENCY">🚨 紧急</button>
+      <button class="btn orange" data-type="CALLME">📞 立刻回电</button>
+      <button class="btn blue"   data-type="HELP">🆘 需要帮忙</button>
+      <button class="btn green"  data-type="OK">✅ 我没事/到家了</button>
+      <button class="btn gray"   data-type="MSG">💬 方便时联系我</button>
+      <button class="btn gray"   data-type="CUSTOM">✍️ 自定义消息</button>
+    </div>
+
+    <div class="msg" id="msg"></div>
+
+    <div class="meta" id="status">
+      状态：就绪
+    </div>
+  </div>
+
+<script>
+/* ====== 你的 Bark Key ====== */
+const BARK_BASE = "https://api.day.app/tAtdk6hedfk4aaaSFLVffd";
+
+/* ====== Bark 参数 ====== */
+const QS = {
+  critical: "call=1&sound=alarm&volume=10&level=critical",
+  timeSensitive: "call=1&sound=alarm&volume=10&level=timeSensitive",
+  normal: "sound=bell&level=active"
+};
+
+const MSG_MAP = {
+  EMERGENCY: { title: "紧急",   body: "请立刻联系我",      qs: QS.critical },
+  CALLME:    { title: "回电",   body: "方便的话现在回电",  qs: QS.timeSensitive },
+  HELP:      { title: "帮忙",   body: "我需要你帮忙一下",  qs: QS.critical },
+  OK:        { title: "报平安", body: "我没事/到家了",     qs: "sound=glass&level=active" },
+  MSG:       { title: "联系我", body: "方便时联系我一下",  qs: QS.normal }
+};
+
+const $ = (id)=>document.getElementById(id);
+const msgEl = $("msg");
+const statusEl = $("status");
+const withLocEl = $("withLoc");
+const panel = $("panel");
+
+function setMsg(s){ msgEl.textContent = s; }
+function urlencode(s){ return encodeURIComponent(s); }
+
+/* ====== 定位 ====== */
+async function getLocationText(){
+  return new Promise((resolve)=>{
+    if (!("geolocation" in navigator)) return resolve("");
+
+    navigator.geolocation.getCurrentPosition(
+      (pos)=>{
+        const lat = pos.coords.latitude.toFixed(6);
+        const lon = pos.coords.longitude.toFixed(6);
+        const link = `https://maps.google.com/?q=${lat},${lon}`;
+        resolve(`\n定位: ${lat},${lon}\n地图: ${link}`);
+      },
+      ()=>resolve(""),
+      { enableHighAccuracy:true, timeout:8000 }
+    );
+  });
+}
+
+/* ====== 发送 Bark ====== */
+async function sendBark(title, body, qs){
+
+  let extra = "";
+  if (withLocEl.checked){
+    setMsg("请求定位授权中…");
+    extra = await getLocationText();
+  }
+
+  const fullBody = body + (extra || "");
+  const url = `${BARK_BASE}/${urlencode(title)}/${urlencode(fullBody)}?${qs}`;
+
+  setMsg("发送中…");
+  statusEl.textContent = "状态：发送中…";
+
+  try{
+    await fetch(url, { mode:"no-cors" });
+    setMsg("已发送 ✅");
+    statusEl.textContent = "状态：已发送";
+  }catch(e){
+    setMsg("发送失败 ❌");
+    statusEl.textContent = "状态：失败";
+  }
+}
+
+/* ====== 点击处理 ====== */
+panel.addEventListener("click", async (e)=>{
+  const btn = e.target.closest("button");
+  if (!btn) return;
+
+  const type = btn.dataset.type;
+
+  /* 🔴 紧急按钮二次确认 */
+  if (type === "EMERGENCY") {
+    const ok = confirm("确认发送【紧急】通知吗？");
+    if (!ok) return;
+  }
+
+  if (type === "CUSTOM"){
+    const text = prompt("输入要发送的消息：");
+    if (!text) return;
+    await sendBark("自定义", text, QS.timeSensitive);
+    return;
+  }
+
+  const cfg = MSG_MAP[type];
+  if (!cfg) return;
+
+  await sendBark(cfg.title, cfg.body, cfg.qs);
+});
+
+setMsg("点按钮即可发送。");
+
+</script>
+
+</body>
+</html>
